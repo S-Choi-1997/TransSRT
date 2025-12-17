@@ -167,33 +167,43 @@ async function uploadAndTranslate(file) {
     // Show progress
     showSection('progress');
     updateProgress(0, 'Reading file...');
+    console.log('[TransSRT] Starting upload and translate process');
+    console.log('[TransSRT] File:', file.name, 'Size:', file.size, 'bytes');
 
     try {
         // Read file as ArrayBuffer
+        console.log('[TransSRT] Reading file as ArrayBuffer...');
         const arrayBuffer = await file.arrayBuffer();
+        console.log('[TransSRT] ArrayBuffer size:', arrayBuffer.byteLength);
 
         // Convert to Base64
         updateProgress(10, 'Encoding file...');
+        console.log('[TransSRT] Converting to Base64...');
         const uint8Array = new Uint8Array(arrayBuffer);
         let binaryString = '';
         for (let i = 0; i < uint8Array.length; i++) {
             binaryString += String.fromCharCode(uint8Array[i]);
         }
         const base64Content = btoa(binaryString);
+        console.log('[TransSRT] Base64 content length:', base64Content.length);
 
         // Create JSON payload
         const payload = {
             filename: file.name,
             content: base64Content
         };
+        console.log('[TransSRT] Payload created, filename:', payload.filename);
 
         // Update progress
         updateProgress(30, 'Uploading to server...');
+        console.log('[TransSRT] Making API request to:', CONFIG.API_ENDPOINT);
+        console.log('[TransSRT] Request timeout:', CONFIG.REQUEST_TIMEOUT, 'ms');
 
         // Make API request with timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
 
+        const requestStartTime = Date.now();
         const response = await fetch(CONFIG.API_ENDPOINT, {
             method: 'POST',
             headers: {
@@ -204,40 +214,60 @@ async function uploadAndTranslate(file) {
         });
 
         clearTimeout(timeoutId);
+        const requestDuration = Date.now() - requestStartTime;
+        console.log('[TransSRT] Response received in', requestDuration, 'ms');
+        console.log('[TransSRT] Response status:', response.status, response.statusText);
+        console.log('[TransSRT] Response headers:', Object.fromEntries(response.headers.entries()));
 
         // Update progress
         updateProgress(60, 'Translating subtitles...');
 
         // Check response
         if (!response.ok) {
+            console.error('[TransSRT] Response not OK:', response.status);
             // Try to parse error JSON
             const contentType = response.headers.get('content-type');
+            console.log('[TransSRT] Error response content-type:', contentType);
             if (contentType && contentType.includes('application/json')) {
                 const errorData = await response.json();
+                console.error('[TransSRT] Error data:', errorData);
                 throw new Error(errorData.error?.message || 'Translation failed');
             } else {
+                const errorText = await response.text();
+                console.error('[TransSRT] Error text:', errorText);
                 throw new Error(`Server error: ${response.status} ${response.statusText}`);
             }
         }
 
         // Parse JSON response
         updateProgress(80, 'Processing translation...');
+        console.log('[TransSRT] Parsing JSON response...');
         const result = await response.json();
+        console.log('[TransSRT] Result:', {
+            success: result.success,
+            filename: result.filename,
+            entry_count: result.entry_count,
+            content_length: result.content?.length
+        });
 
         if (!result.success) {
+            console.error('[TransSRT] Success flag is false');
             throw new Error('Translation failed: No success flag in response');
         }
 
         // Decode Base64 content
+        console.log('[TransSRT] Decoding Base64 content...');
         const translatedBinary = atob(result.content);
         const translatedBytes = new Uint8Array(translatedBinary.length);
         for (let i = 0; i < translatedBinary.length; i++) {
             translatedBytes[i] = translatedBinary.charCodeAt(i);
         }
         const blob = new Blob([translatedBytes], { type: 'application/x-subrip' });
+        console.log('[TransSRT] Blob created, size:', blob.size);
 
         // Get filename from response
         const filename = result.filename || file.name.replace('.srt', '_en.srt');
+        console.log('[TransSRT] Output filename:', filename);
 
         // Update progress
         updateProgress(100, 'Translation complete!');
@@ -248,17 +278,22 @@ async function uploadAndTranslate(file) {
 
         // Show success with entry count
         const successMsg = `Translated ${result.entry_count} subtitle entries`;
+        console.log('[TransSRT] Translation successful!', successMsg);
         setTimeout(() => {
             showSuccess(filename, successMsg);
         }, 500);
 
     } catch (error) {
-        console.error('Translation error:', error);
+        console.error('[TransSRT] Translation error:', error);
+        console.error('[TransSRT] Error name:', error.name);
+        console.error('[TransSRT] Error message:', error.message);
+        console.error('[TransSRT] Error stack:', error.stack);
 
         let errorMessage = 'An unexpected error occurred.';
 
         if (error.name === 'AbortError') {
             errorMessage = 'Translation timed out. Your file may be too large.';
+            console.error('[TransSRT] Request aborted/timed out');
         } else if (error.message) {
             errorMessage = error.message;
         }
