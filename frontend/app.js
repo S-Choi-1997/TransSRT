@@ -5,8 +5,8 @@
 
 // Configuration
 const CONFIG = {
-    // Production endpoint
-    API_ENDPOINT: 'https://us-central1-apsconsulting.cloudfunctions.net/translate-srt/translate',
+    // Production endpoint (Cloud Run Service URL)
+    API_ENDPOINT: 'https://translate-srt-mbi34yrklq-uc.a.run.app/translate',
     // API_ENDPOINT: 'http://localhost:8080/translate',  // Local development
     MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
     ALLOWED_EXTENSIONS: ['.srt'],
@@ -166,15 +166,29 @@ function processFile(file) {
 async function uploadAndTranslate(file) {
     // Show progress
     showSection('progress');
-    updateProgress(0, 'Uploading file...');
+    updateProgress(0, 'Reading file...');
 
     try {
-        // Create FormData
-        const formData = new FormData();
-        formData.append('file', file);
+        // Read file as ArrayBuffer
+        const arrayBuffer = await file.arrayBuffer();
+
+        // Convert to Base64
+        updateProgress(10, 'Encoding file...');
+        const uint8Array = new Uint8Array(arrayBuffer);
+        let binaryString = '';
+        for (let i = 0; i < uint8Array.length; i++) {
+            binaryString += String.fromCharCode(uint8Array[i]);
+        }
+        const base64Content = btoa(binaryString);
+
+        // Create JSON payload
+        const payload = {
+            filename: file.name,
+            content: base64Content
+        };
 
         // Update progress
-        updateProgress(30, 'Translating subtitles...');
+        updateProgress(30, 'Uploading to server...');
 
         // Make API request with timeout
         const controller = new AbortController();
@@ -182,14 +196,17 @@ async function uploadAndTranslate(file) {
 
         const response = await fetch(CONFIG.API_ENDPOINT, {
             method: 'POST',
-            body: formData,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload),
             signal: controller.signal
         });
 
         clearTimeout(timeoutId);
 
         // Update progress
-        updateProgress(80, 'Processing translation...');
+        updateProgress(60, 'Translating subtitles...');
 
         // Check response
         if (!response.ok) {
@@ -203,19 +220,24 @@ async function uploadAndTranslate(file) {
             }
         }
 
-        // Get translated file
-        const blob = await response.blob();
+        // Parse JSON response
+        updateProgress(80, 'Processing translation...');
+        const result = await response.json();
 
-        // Extract filename from Content-Disposition header
-        const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = file.name.replace('.srt', '_en.srt');
-
-        if (contentDisposition) {
-            const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
-            if (filenameMatch) {
-                filename = filenameMatch[1];
-            }
+        if (!result.success) {
+            throw new Error('Translation failed: No success flag in response');
         }
+
+        // Decode Base64 content
+        const translatedBinary = atob(result.content);
+        const translatedBytes = new Uint8Array(translatedBinary.length);
+        for (let i = 0; i < translatedBinary.length; i++) {
+            translatedBytes[i] = translatedBinary.charCodeAt(i);
+        }
+        const blob = new Blob([translatedBytes], { type: 'application/x-subrip' });
+
+        // Get filename from response
+        const filename = result.filename || file.name.replace('.srt', '_en.srt');
 
         // Update progress
         updateProgress(100, 'Translation complete!');
@@ -224,9 +246,10 @@ async function uploadAndTranslate(file) {
         translatedBlob = blob;
         translatedFilename = filename;
 
-        // Show success
+        // Show success with entry count
+        const successMsg = `Translated ${result.entry_count} subtitle entries`;
         setTimeout(() => {
-            showSuccess(filename);
+            showSuccess(filename, successMsg);
         }, 500);
 
     } catch (error) {
@@ -304,9 +327,12 @@ function showSection(section) {
 /**
  * Show success state
  */
-function showSuccess(filename) {
-    elements.successMessage.textContent =
-        `Your file "${filename}" has been translated successfully.`;
+function showSuccess(filename, additionalMsg = '') {
+    let message = `Your file "${filename}" has been translated successfully.`;
+    if (additionalMsg) {
+        message += ` ${additionalMsg}`;
+    }
+    elements.successMessage.textContent = message;
     showSection('success');
 }
 
