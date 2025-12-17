@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransSRT - Korean to English Subtitle Translator</title>
+    <meta name="description" content="Translate Korean SRT subtitle files to English using AI">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TransSRT</h1>
+            <p class="subtitle">Korean to English Subtitle Translator</p>
+        </header>
+
+        <main>
+            <!-- Upload Section -->
+            <section id="upload-section" class="section">
+                <div id="drop-zone" class="drop-zone">
+                    <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p class="drop-text">Drag & drop your SRT file here</p>
+                    <p class="drop-hint">or</p>
+                    <button id="file-select-btn" class="btn btn-primary">Select File</button>
+                    <input type="file" id="file-input" accept=".srt" hidden>
+                    <p class="file-info">Maximum file size: 10MB</p>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section id="progress-section" class="section hidden">
+                <div class="progress-container">
+                    <h2>Translating...</h2>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <p id="progress-text" class="progress-text">Processing your file...</p>
+                </div>
+            </section>
+
+            <!-- Success Section -->
+            <section id="success-section" class="section hidden">
+                <div class="success-container">
+                    <svg class="success-icon" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    <h2>Translation Complete!</h2>
+                    <p id="success-message" class="success-message">Your file has been translated successfully.</p>
+                    <div class="button-group">
+                        <button id="download-btn" class="btn btn-success">Download Translated File</button>
+                        <button id="translate-another-btn" class="btn btn-secondary">Translate Another File</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <section id="error-section" class="section hidden">
+                <div class="error-container">
+                    <svg class="error-icon" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                    <h2>Translation Failed</h2>
+                    <p id="error-message" class="error-message">An error occurred during translation.</p>
+                    <div class="button-group">
+                        <button id="retry-btn" class="btn btn-primary">Try Again</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>
+                Powered by <a href="https://ai.google.dev/gemini-api" target="_blank" rel="noopener">Gemini API</a>
+                |
+                <a href="https://github.com/yourusername/TransSRT" target="_blank" rel="noopener">GitHub</a>
+            </p>
+            <p class="footer-note">Free tier: ~100 files/month | Translation time: ~10 seconds for 1000 entries</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

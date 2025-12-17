@@ -1,0 +1,59 @@
+name: Deploy Backend to Cloud Run Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run Functions
+        run: |
+          gcloud functions deploy translate-srt \
+            --gen2 \
+            --runtime python311 \
+            --region us-central1 \
+            --source ./backend \
+            --entry-point translate_srt \
+            --trigger-http \
+            --allow-unauthenticated \
+            --memory 512Mi \
+            --timeout 300s \
+            --max-instances 10 \
+            --set-env-vars GEMINI_MODEL=${{ secrets.GEMINI_MODEL }},CHUNK_SIZE=50,MAX_CONCURRENT_REQUESTS=10,MAX_FILE_SIZE_MB=10,CORS_ORIGINS=${{ secrets.CORS_ORIGINS }} \
+            --set-secrets GEMINI_API_KEY=gemini-api-key:latest
+
+      - name: Get Function URL
+        id: get-url
+        run: |
+          URL=$(gcloud functions describe translate-srt \
+            --gen2 \
+            --region us-central1 \
+            --format="value(serviceConfig.uri)")
+          echo "Function URL: $URL"
+          echo "function_url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Backend deployed successfully!"
+          echo "📍 Region: us-central1 (Iowa)"
+          echo "🔗 Function URL: ${{ steps.get-url.outputs.function_url }}"
+          echo ""
+          echo "⚠️ Update frontend/app.js CONFIG.API_ENDPOINT with this URL"
