@@ -195,7 +195,7 @@ async function uploadAndTranslate(file) {
         console.log('[TransSRT] Payload created, filename:', payload.filename);
 
         // Update progress
-        updateProgress(20, 'Step 3/5: Uploading to server...');
+        updateProgress(20, 'Step 3/5: Sending to server and translating (may take 1-3 minutes)...');
         console.log('[TransSRT] Step 3: Making API request to:', CONFIG.API_ENDPOINT);
         console.log('[TransSRT] Request timeout:', CONFIG.REQUEST_TIMEOUT, 'ms');
 
@@ -219,8 +219,8 @@ async function uploadAndTranslate(file) {
         console.log('[TransSRT] Response status:', response.status, response.statusText);
         console.log('[TransSRT] Response headers:', Object.fromEntries(response.headers.entries()));
 
-        // Update progress
-        updateProgress(40, 'Step 4/5: Translating subtitles (this may take 2-3 minutes)...');
+        // Update progress (response received)
+        updateProgress(80, 'Step 4/5: Processing translated content...');
 
         // Check response
         if (!response.ok) {
@@ -240,8 +240,7 @@ async function uploadAndTranslate(file) {
         }
 
         // Parse JSON response
-        updateProgress(80, 'Step 5/5: Processing translated content...');
-        console.log('[TransSRT] Step 5: Parsing JSON response...');
+        console.log('[TransSRT] Step 4: Parsing JSON response...');
         const result = await response.json();
         console.log('[TransSRT] Result:', {
             success: result.success,
@@ -270,7 +269,7 @@ async function uploadAndTranslate(file) {
         console.log('[TransSRT] Output filename:', filename);
 
         // Update progress
-        updateProgress(100, 'Complete! Translated ' + result.entry_count + ' subtitle entries.');
+        updateProgress(100, 'Step 5/5: Complete! Translated ' + result.entry_count + ' subtitle entries.');
 
         // Store results
         translatedBlob = blob;
