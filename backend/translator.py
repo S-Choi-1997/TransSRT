@@ -215,7 +215,7 @@ Guidelines:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((asyncio.TimeoutError, RateLimitError))
+        retry=retry_if_exception_type((asyncio.TimeoutError, RateLimitError, TranslationError))
     )
     async def _translate_chunk_with_retry(self, chunk: Chunk) -> List[str]:
         """
@@ -230,28 +230,52 @@ Guidelines:
         Raises:
             TranslationError: If translation fails after retries
         """
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+
         async with self.semaphore:
+            start_time = time.time()
             try:
+                logger.info(f"[Chunk {chunk.index}/{chunk.total}] Starting translation...")
+
+                prompt_start = time.time()
                 prompt = self._create_prompt(chunk)
+                prompt_time = time.time() - prompt_start
+                logger.info(f"[Chunk {chunk.index}/{chunk.total}] Prompt created in {prompt_time:.2f}s")
 
                 # Call REST API (sync call, wrapped in async context)
+                api_start = time.time()
                 loop = asyncio.get_event_loop()
                 response_text = await loop.run_in_executor(
                     None,
                     lambda: self._call_gemini_rest(prompt)
                 )
+                api_time = time.time() - api_start
+                logger.info(f"[Chunk {chunk.index}/{chunk.total}] API call completed in {api_time:.2f}s")
 
                 # Check for empty response
                 if not response_text:
                     raise TranslationError("Empty response from Gemini API")
 
                 # Parse response
+                parse_start = time.time()
                 translations = self._parse_response(response_text, len(chunk.entries))
+                parse_time = time.time() - parse_start
+
+                total_time = time.time() - start_time
+                logger.info(f"[Chunk {chunk.index}/{chunk.total}] Parsing completed in {parse_time:.2f}s")
+                logger.info(f"[Chunk {chunk.index}/{chunk.total}] TOTAL TIME: {total_time:.2f}s")
+
                 return translations
 
-            except (asyncio.TimeoutError, RateLimitError):
+            except (asyncio.TimeoutError, RateLimitError, TranslationError) as e:
+                total_time = time.time() - start_time
+                logger.error(f"[Chunk {chunk.index}/{chunk.total}] Failed after {total_time:.2f}s: {e}")
                 raise  # Let retry handle these
             except Exception as e:
+                total_time = time.time() - start_time
+                logger.error(f"[Chunk {chunk.index}/{chunk.total}] Unexpected error after {total_time:.2f}s: {e}")
                 raise TranslationError(f"Translation failed: {e}")
 
     async def translate_chunks_async(self, chunks: List[Chunk]) -> List[List[str]]:
@@ -267,8 +291,18 @@ Guidelines:
         Raises:
             TranslationError: If any chunk translation fails completely
         """
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"Starting translation of {len(chunks)} chunks with max_concurrent={self.max_concurrent}")
+        start_time = time.time()
+
         tasks = [self._translate_chunk_with_retry(chunk) for chunk in chunks]
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        total_time = time.time() - start_time
+        logger.info(f"All {len(chunks)} chunks completed in {total_time:.2f}s (avg: {total_time/len(chunks):.2f}s per chunk)")
 
         # Handle results
         translations = []
