@@ -78,6 +78,8 @@ Guidelines:
 - Translate 안녕하세요 as "Welcome." (formal greeting)
 - Translate 힘드셨죠 as "You must have felt [emotion]" (polite, third-person perspective)
 - Translate 연락 as "contact" in formal context
+- Translate 1번분들 as "those who chose option 1" or "if you picked number 1" (refers to tarot reading options, not ranking)
+- Translate 상대방 as "your ex" or "they" in romantic contexts (avoid "the other person")
 - Keep spiritual/tarot terminology accurate (card, energy, fortune)
 - Maintain professional subtitle style
 - Keep translations concise for subtitle format (aim for 2 lines max per entry)
