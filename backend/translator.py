@@ -1,17 +1,15 @@
 """
 Translator Module
 Integrates with Gemini API for async batch translation of subtitles.
+Uses REST API for Cloud Run compatibility.
 """
 
 import asyncio
 import os
+import json
 from typing import List, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None
+import requests
 
 from chunker import Chunk
 
@@ -27,7 +25,7 @@ class RateLimitError(Exception):
 
 
 class GeminiTranslator:
-    """Translator using Google Gemini API with async batch processing."""
+    """Translator using Google Gemini REST API with async batch processing."""
 
     def __init__(
         self,
@@ -43,16 +41,12 @@ class GeminiTranslator:
             model: Gemini model name (default: gemini-1.5-flash)
             max_concurrent: Maximum concurrent API requests (default: 10)
         """
-        if not genai:
-            raise ImportError("google-generativeai package not installed")
-
-        self.api_key = api_key
+        self.api_key = api_key.strip()  # Remove any whitespace/newlines
         self.model_name = model
         self.max_concurrent = max_concurrent
 
-        # Configure Gemini
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        # REST API endpoint
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
         # Semaphore for rate limiting
         self.semaphore = asyncio.Semaphore(max_concurrent)
@@ -149,6 +143,73 @@ Guidelines:
 
         return cleaned_lines
 
+    def _call_gemini_rest(self, prompt: str) -> str:
+        """
+        Call Gemini REST API directly.
+
+        Args:
+            prompt: Translation prompt
+
+        Returns:
+            Response text from Gemini
+
+        Raises:
+            TranslationError: If API call fails
+        """
+        url = f"{self.base_url}/models/{self.model_name}:generateContent"
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        params = {
+            "key": self.api_key
+        }
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [{"text": prompt}]
+                }
+            ]
+        }
+
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                params=params,
+                json=payload,
+                timeout=60  # 60 second timeout
+            )
+            response.raise_for_status()
+
+            result = response.json()
+
+            # Extract text from response
+            if 'candidates' not in result or len(result['candidates']) == 0:
+                raise TranslationError("No candidates in response")
+
+            candidate = result['candidates'][0]
+            if 'content' not in candidate or 'parts' not in candidate['content']:
+                raise TranslationError("Invalid response structure")
+
+            parts = candidate['content']['parts']
+            if len(parts) == 0 or 'text' not in parts[0]:
+                raise TranslationError("No text in response")
+
+            return parts[0]['text']
+
+        except requests.exceptions.Timeout:
+            raise asyncio.TimeoutError("Request timed out")
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                raise RateLimitError(f"Rate limit exceeded: {e}")
+            else:
+                raise TranslationError(f"HTTP error: {e}")
+        except Exception as e:
+            raise TranslationError(f"API call failed: {e}")
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -171,29 +232,25 @@ Guidelines:
             try:
                 prompt = self._create_prompt(chunk)
 
-                # Generate content (sync call, but wrapped in async context)
+                # Call REST API (sync call, wrapped in async context)
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
+                response_text = await loop.run_in_executor(
                     None,
-                    lambda: self.model.generate_content(prompt)
+                    lambda: self._call_gemini_rest(prompt)
                 )
 
-                # Check for rate limit or errors
-                if not response or not response.text:
+                # Check for empty response
+                if not response_text:
                     raise TranslationError("Empty response from Gemini API")
 
                 # Parse response
-                translations = self._parse_response(response.text, len(chunk.entries))
+                translations = self._parse_response(response_text, len(chunk.entries))
                 return translations
 
+            except (asyncio.TimeoutError, RateLimitError):
+                raise  # Let retry handle these
             except Exception as e:
-                error_msg = str(e).lower()
-                if '429' in error_msg or 'rate limit' in error_msg:
-                    raise RateLimitError(f"Rate limit exceeded: {e}")
-                elif 'timeout' in error_msg:
-                    raise asyncio.TimeoutError(f"Request timed out: {e}")
-                else:
-                    raise TranslationError(f"Translation failed: {e}")
+                raise TranslationError(f"Translation failed: {e}")
 
     async def translate_chunks_async(self, chunks: List[Chunk]) -> List[List[str]]:
         """

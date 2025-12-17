@@ -5,6 +5,8 @@ Main entry point for Korean-to-English subtitle translation service.
 
 import os
 import logging
+import re
+import base64
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from io import BytesIO
@@ -211,6 +213,12 @@ def translate():
         return response
 
     try:
+        # Debug logging
+        logger.info(f"Request method: {request.method}")
+        logger.info(f"Request content type: {request.content_type}")
+        logger.info(f"Request files keys: {list(request.files.keys())}")
+        logger.info(f"Request form keys: {list(request.form.keys())}")
+
         # Validate file
         if 'file' not in request.files:
             raise TranslationServiceError(
@@ -304,8 +312,150 @@ def translate_srt(request):
     Returns:
         Flask response object
     """
-    with app.request_context(request.environ):
-        return app.full_dispatch_request()
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        headers = {
+            'Access-Control-Allow-Origin': CORS_ORIGINS,
+            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        }
+        return ('', 204, headers)
+
+    # Route to appropriate handler
+    path = request.path
+    if path == '/health' or path == '/translate-srt/health':
+        return jsonify({
+            'status': 'healthy',
+            'service': 'TransSRT',
+            'version': '1.0.0'
+        })
+
+    # Accept JSON request with Base64 encoded file
+    try:
+        content_type = request.headers.get('Content-Type', '')
+
+        # Validate content type
+        if 'application/json' not in content_type:
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_REQUEST',
+                    'message': 'Request must be application/json'
+                }
+            }), 400
+
+        # Parse JSON data
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_REQUEST',
+                    'message': 'Request body must be valid JSON'
+                }
+            }), 400
+
+        logger.info(f"Received JSON request with keys: {list(data.keys())}")
+
+        # Validate required fields
+        if 'filename' not in data or 'content' not in data:
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_REQUEST',
+                    'message': 'Request must include "filename" and "content" fields'
+                }
+            }), 400
+
+        filename = data['filename']
+        base64_content = data['content']
+
+        # Validate file extension
+        if not filename.endswith('.srt'):
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_FILE',
+                    'message': 'File must be a .srt file'
+                }
+            }), 400
+
+        # Decode Base64 content
+        try:
+            file_data = base64.b64decode(base64_content)
+        except Exception as e:
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_REQUEST',
+                    'message': f'Invalid Base64 encoding: {str(e)}'
+                }
+            }), 400
+
+        # Validate file size
+        file_size = len(file_data)
+        max_size = MAX_FILE_SIZE_MB * 1024 * 1024
+        if file_size > max_size:
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_FILE',
+                    'message': f'File size exceeds {MAX_FILE_SIZE_MB}MB limit'
+                }
+            }), 400
+
+        # Decode file content - try multiple encodings
+        file_content = None
+        for encoding in ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr']:
+            try:
+                file_content = file_data.decode(encoding)
+                logger.info(f"Successfully decoded file with {encoding}")
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if file_content is None:
+            return jsonify({
+                'error': {
+                    'code': 'INVALID_FILE',
+                    'message': 'Unable to decode file. Please ensure it is UTF-8 or EUC-KR encoded'
+                }
+            }), 400
+
+        logger.info(f"Processing file: {filename} ({file_size} bytes)")
+
+        # Translate
+        translated_content, entry_count = process_translation(file_content)
+
+        # Generate output filename
+        original_filename = secure_filename(filename)
+        output_filename = generate_output_filename(original_filename)
+
+        # Return as Base64 JSON response
+        translated_bytes = translated_content.encode('utf-8')
+        translated_base64 = base64.b64encode(translated_bytes).decode('utf-8')
+
+        response = jsonify({
+            'success': True,
+            'filename': output_filename,
+            'content': translated_base64,
+            'entry_count': entry_count
+        })
+        response.headers.add('Access-Control-Allow-Origin', CORS_ORIGINS)
+        logger.info(f"Successfully translated {entry_count} entries from {filename}")
+        return response
+
+    except TranslationServiceError as e:
+        logger.error(f"{e.code}: {e.message}")
+        response = jsonify({'error': {'code': e.code, 'message': e.message}})
+        response.status_code = e.status_code
+        response.headers.add('Access-Control-Allow-Origin', CORS_ORIGINS)
+        return response
+    except Exception as e:
+        logger.error(f"Request handling error: {str(e)}", exc_info=True)
+        response = jsonify({
+            'error': {
+                'code': 'INTERNAL_ERROR',
+                'message': f'Request handling failed: {str(e)}'
+            }
+        })
+        response.status_code = 500
+        response.headers.add('Access-Control-Allow-Origin', CORS_ORIGINS)
+        return response
 
 
 # For local testing
