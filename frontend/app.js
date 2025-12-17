@@ -5,9 +5,9 @@
 
 // Configuration
 const CONFIG = {
-    // Production endpoint (Cloud Run Service URL)
-    API_ENDPOINT: 'https://translate-srt-mbi34yrklq-uc.a.run.app/translate',
-    // API_ENDPOINT: 'http://localhost:8080/translate',  // Local development
+    // Production endpoint (Cloud Run Function URL - no path needed)
+    API_ENDPOINT: 'https://translate-srt-mbi34yrklq-uc.a.run.app',
+    // API_ENDPOINT: 'http://localhost:8080',  // Local development
     MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
     ALLOWED_EXTENSIONS: ['.srt'],
     REQUEST_TIMEOUT: 5 * 60 * 1000  // 5 minutes
