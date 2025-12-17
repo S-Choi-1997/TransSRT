@@ -5,9 +5,9 @@
 
 // Configuration
 const CONFIG = {
-    // Update this URL after deploying Cloud Run Function
-    API_ENDPOINT: 'http://localhost:8080/translate',  // Local development
-    // API_ENDPOINT: 'https://us-central1-YOUR-PROJECT-ID.cloudfunctions.net/translate-srt',  // Production
+    // Production endpoint
+    API_ENDPOINT: 'https://us-central1-apsconsulting.cloudfunctions.net/translate-srt/translate',
+    // API_ENDPOINT: 'http://localhost:8080/translate',  // Local development
     MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
     ALLOWED_EXTENSIONS: ['.srt'],
     REQUEST_TIMEOUT: 5 * 60 * 1000  // 5 minutes
