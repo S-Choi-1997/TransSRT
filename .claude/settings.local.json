@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(bash deploy_cloudrun.sh:*)",
+      "Bash(gcloud config list:*)",
+      "Bash(gcloud config set:*)",
+      "Bash(gcloud services enable:*)",
+      "Bash(gcloud secrets create:*)",
+      "Bash(gcloud secrets add-iam-policy-binding:*)",
+      "Bash(gcloud functions deploy:*)",
+      "Bash(git push:*)",
+      "Bash(gcloud functions logs read:*)",
+      "Bash(curl:*)",
+      "Bash(cat:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(timeout 30 bash:*)",
+      "Bash(gcloud functions describe:*)",
+      "Bash(head:*)",
+      "Bash(gcloud secrets versions add:*)"
+    ]
+  }
+}

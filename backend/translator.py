@@ -66,14 +66,14 @@ class GeminiTranslator:
         # Optimized prompt for tarot reading YouTube content
         prompt = """You are a professional Korean-to-English subtitle translator specializing in spiritual and tarot reading content.
 
-Translate the following Korean subtitles to natural English suitable for YouTube viewers, matching the style of these examples:
+CRITICAL REQUIREMENTS:
+1. You MUST translate EXACTLY {count} Korean subtitles
+2. Each input line MUST have EXACTLY ONE corresponding output line
+3. Output format: NUMBER. TRANSLATION (e.g., "1. Welcome.")
+4. NEVER skip, merge, or split entries
+5. Preserve line breaks within each subtitle text exactly as they appear in the Korean
 
-Example translations:
-- 안녕하세요 → "Welcome."
-- 많이 힘드셨죠? → "You must have felt frustrated"
-- 연락이 안오셔서요 → "due to the lack of contact."
-
-Guidelines:
+TRANSLATION GUIDELINES:
 - Use formal, polite tone with complete sentences
 - Translate 안녕하세요 as "Welcome." (formal greeting)
 - Translate 힘드셨죠 as "You must have felt [emotion]" (polite, third-person perspective)
@@ -83,29 +83,37 @@ Guidelines:
 - Keep spiritual/tarot terminology accurate (card, energy, fortune)
 - Maintain professional subtitle style
 - Keep translations concise for subtitle format (aim for 2 lines max per entry)
-- Preserve line breaks from the original Korean text
+
+EXAMPLE INPUT-OUTPUT PAIRS:
+1. 안녕하세요 → 1. Welcome.
+2. 많이 힘드셨죠? → 2. You must have felt frustrated.
+3. 연락이 안오셔서요 → 3. due to the lack of contact.
 
 """
 
         # Add context if available
         if chunk.previous_context:
-            prompt += f"Previous context (for continuity):\n"
+            prompt += f"CONTEXT (previous subtitles for continuity):\n"
             for i, entry in enumerate(chunk.previous_context[-3:], 1):
-                prompt += f"{i}. {entry.text}\n"
+                prompt += f"  {entry.text}\n"
             prompt += "\n"
 
         # Add current chunk info
-        prompt += f"This is chunk {chunk.index}/{chunk.total}.\n\n"
-        prompt += "Korean subtitles to translate:\n"
+        prompt += f"CHUNK INFO: This is chunk {chunk.index}/{chunk.total}\n\n"
+        prompt += f"TRANSLATE THESE {len(chunk.entries)} KOREAN SUBTITLES:\n\n"
 
         for i, entry in enumerate(chunk.entries, 1):
             prompt += f"{i}. {entry.text}\n"
 
-        prompt += "\n"
-        prompt += "Provide ONLY the English translations, one per line, matching the exact count above.\n"
-        prompt += "Do not include numbering in your response."
+        prompt += f"\n"
+        prompt += f"OUTPUT FORMAT (EXACTLY {len(chunk.entries)} LINES):\n"
+        prompt += f"1. [English translation of line 1]\n"
+        prompt += f"2. [English translation of line 2]\n"
+        prompt += f"...\n"
+        prompt += f"{len(chunk.entries)}. [English translation of line {len(chunk.entries)}]\n"
+        prompt += f"\nREMEMBER: Output MUST contain EXACTLY {len(chunk.entries)} numbered lines. No more, no less."
 
-        return prompt
+        return prompt.replace("{count}", str(len(chunk.entries)))
 
     def _parse_response(self, response_text: str, expected_count: int) -> List[str]:
         """
@@ -121,29 +129,49 @@ Guidelines:
         Raises:
             TranslationError: If response cannot be parsed correctly
         """
+        import re
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Split by newlines and clean
         lines = [line.strip() for line in response_text.strip().split('\n') if line.strip()]
 
-        # Remove any numbering that might have been added
-        cleaned_lines = []
+        # Log raw response for debugging
+        logger.info(f"Parsing response: {len(lines)} non-empty lines (expected {expected_count})")
+
+        # Parse numbered lines in format "N. translation"
+        translations = {}
         for line in lines:
-            # Remove leading numbers like "1.", "1)", etc.
-            import re
-            cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
-            if cleaned:
-                cleaned_lines.append(cleaned)
-
-        if len(cleaned_lines) != expected_count:
-            # Try to handle mismatches gracefully
-            if len(cleaned_lines) > expected_count:
-                # Take first N
-                cleaned_lines = cleaned_lines[:expected_count]
+            # Match pattern: number followed by . or ) then text
+            match = re.match(r'^(\d+)[\.\)]\s*(.+)$', line)
+            if match:
+                num = int(match.group(1))
+                text = match.group(2).strip()
+                if 1 <= num <= expected_count:
+                    translations[num] = text
+                else:
+                    logger.warning(f"Ignoring line with out-of-range number {num}: {line[:50]}...")
             else:
-                raise TranslationError(
-                    f"Expected {expected_count} translations, got {len(cleaned_lines)}"
-                )
+                # Skip lines that don't match numbered format (could be extra text from model)
+                logger.warning(f"Ignoring non-numbered line: {line[:50]}...")
 
-        return cleaned_lines
+        # Verify we have all translations
+        if len(translations) != expected_count:
+            missing = [i for i in range(1, expected_count + 1) if i not in translations]
+            found = sorted(translations.keys())
+            error_msg = f"Expected {expected_count} translations, got {len(translations)}. "
+            if missing:
+                error_msg += f"Missing numbers: {missing[:10]}. "
+            error_msg += f"Found numbers: {found[:10] if len(found) > 10 else found}"
+            logger.error(f"Parsing failed: {error_msg}")
+            logger.error(f"Raw response preview: {response_text[:500]}...")
+            raise TranslationError(error_msg)
+
+        # Return translations in order
+        ordered_translations = [translations[i] for i in range(1, expected_count + 1)]
+        logger.info(f"Successfully parsed {len(ordered_translations)} translations")
+
+        return ordered_translations
 
     def _call_gemini_rest(self, prompt: str) -> str:
         """
@@ -182,7 +210,7 @@ Guidelines:
                 headers=headers,
                 params=params,
                 json=payload,
-                timeout=60  # 60 second timeout
+                timeout=120  # 120 second timeout for longer chunks
             )
             response.raise_for_status()
 
@@ -215,7 +243,7 @@ Guidelines:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((asyncio.TimeoutError, RateLimitError, TranslationError))
+        retry=retry_if_exception_type((asyncio.TimeoutError, RateLimitError))
     )
     async def _translate_chunk_with_retry(self, chunk: Chunk) -> List[str]:
         """
@@ -269,10 +297,16 @@ Guidelines:
 
                 return translations
 
-            except (asyncio.TimeoutError, RateLimitError, TranslationError) as e:
+            except TranslationError as e:
+                # Parsing/translation errors - don't retry, fail immediately
                 total_time = time.time() - start_time
-                logger.error(f"[Chunk {chunk.index}/{chunk.total}] Failed after {total_time:.2f}s: {e}")
-                raise  # Let retry handle these
+                logger.error(f"[Chunk {chunk.index}/{chunk.total}] Translation error (no retry) after {total_time:.2f}s: {e}")
+                raise  # Don't retry translation errors
+            except (asyncio.TimeoutError, RateLimitError) as e:
+                # Network/rate limit errors - retry
+                total_time = time.time() - start_time
+                logger.error(f"[Chunk {chunk.index}/{chunk.total}] Retryable error after {total_time:.2f}s: {e}")
+                raise  # Let retry decorator handle these
             except Exception as e:
                 total_time = time.time() - start_time
                 logger.error(f"[Chunk {chunk.index}/{chunk.total}] Unexpected error after {total_time:.2f}s: {e}")
@@ -295,14 +329,28 @@ Guidelines:
         import logging
         logger = logging.getLogger(__name__)
 
-        logger.info(f"Starting translation of {len(chunks)} chunks with max_concurrent={self.max_concurrent}")
+        logger.info(f"========== TRANSLATION START ==========")
+        logger.info(f"Total chunks: {len(chunks)}")
+        logger.info(f"Max concurrent requests: {self.max_concurrent}")
+        logger.info(f"Model: {self.model_name}")
         start_time = time.time()
 
         tasks = [self._translate_chunk_with_retry(chunk) for chunk in chunks]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         total_time = time.time() - start_time
-        logger.info(f"All {len(chunks)} chunks completed in {total_time:.2f}s (avg: {total_time/len(chunks):.2f}s per chunk)")
+
+        # Calculate detailed timing statistics
+        total_entries = sum(len(chunk.entries) for chunk in chunks)
+        avg_per_chunk = total_time / len(chunks)
+        avg_per_entry = total_time / total_entries if total_entries > 0 else 0
+
+        logger.info(f"========== TRANSLATION COMPLETE ==========")
+        logger.info(f"Total time: {total_time:.2f}s")
+        logger.info(f"Total entries: {total_entries}")
+        logger.info(f"Average per chunk: {avg_per_chunk:.2f}s")
+        logger.info(f"Average per entry: {avg_per_entry:.3f}s")
+        logger.info(f"Throughput: {total_entries/total_time:.2f} entries/sec")
 
         # Handle results
         translations = []

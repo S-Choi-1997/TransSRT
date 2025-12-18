@@ -102,12 +102,17 @@ def process_translation(content: str) -> tuple[str, int]:
     Raises:
         TranslationServiceError: If translation fails
     """
+    import time
+    overall_start = time.time()
+
     # Parse SRT
     parser = SRTParser()
 
     try:
+        parse_start = time.time()
         entries = parser.parse(content)
-        logger.info(f"Parsed {len(entries)} SRT entries")
+        parse_time = time.time() - parse_start
+        logger.info(f"[TIMING] Parsing: {parse_time:.3f}s ({len(entries)} entries)")
     except ValueError as e:
         raise TranslationServiceError(
             message=str(e),
@@ -117,8 +122,10 @@ def process_translation(content: str) -> tuple[str, int]:
 
     # Create chunks
     try:
+        chunk_start = time.time()
         chunks = create_chunks(entries, chunk_size=CHUNK_SIZE)
-        logger.info(f"Created {len(chunks)} chunks (size={CHUNK_SIZE})")
+        chunk_time = time.time() - chunk_start
+        logger.info(f"[TIMING] Chunking: {chunk_time:.3f}s ({len(chunks)} chunks of size {CHUNK_SIZE})")
     except Exception as e:
         raise TranslationServiceError(
             message=f"Failed to create chunks: {e}",
@@ -135,13 +142,15 @@ def process_translation(content: str) -> tuple[str, int]:
         )
 
     try:
+        translate_start = time.time()
         translated_chunks = translate_subtitles(
             chunks=chunks,
             api_key=GEMINI_API_KEY,
             model=GEMINI_MODEL,
             max_concurrent=MAX_CONCURRENT
         )
-        logger.info(f"Translated {len(translated_chunks)} chunks")
+        translate_time = time.time() - translate_start
+        logger.info(f"[TIMING] Translation: {translate_time:.3f}s ({len(translated_chunks)} chunks)")
     except TranslationError as e:
         raise TranslationServiceError(
             message=str(e),
@@ -170,6 +179,7 @@ def process_translation(content: str) -> tuple[str, int]:
             )
 
     # Reassemble translated entries
+    reassemble_start = time.time()
     translated_entries = []
     for i, chunk in enumerate(chunks):
         translations = translated_chunks[i]
@@ -181,17 +191,25 @@ def process_translation(content: str) -> tuple[str, int]:
                     text=translations[j]
                 )
                 translated_entries.append(translated_entry)
+    reassemble_time = time.time() - reassemble_start
+    logger.info(f"[TIMING] Reassembly: {reassemble_time:.3f}s ({len(translated_entries)} entries)")
 
     # Format output
     try:
+        format_start = time.time()
         translated_content = parser.format_output(translated_entries)
-        logger.info(f"Formatted {len(translated_entries)} translated entries")
+        format_time = time.time() - format_start
+        logger.info(f"[TIMING] Formatting: {format_time:.3f}s")
     except Exception as e:
         raise TranslationServiceError(
             message=f"Failed to format output: {e}",
             code="FORMAT_FAILED",
             status_code=500
         )
+
+    overall_time = time.time() - overall_start
+    logger.info(f"[TIMING] ========== TOTAL PROCESS TIME: {overall_time:.3f}s ==========")
+    logger.info(f"[TIMING] Breakdown - Parse: {parse_time:.3f}s | Chunk: {chunk_time:.3f}s | Translate: {translate_time:.3f}s | Reassemble: {reassemble_time:.3f}s | Format: {format_time:.3f}s")
 
     return translated_content, len(translated_entries)
 
@@ -421,9 +439,10 @@ def translate_srt(request):
         # Translate
         translated_content, entry_count = process_translation(file_content)
 
-        # Generate output filename
-        original_filename = secure_filename(filename)
-        output_filename = generate_output_filename(original_filename)
+        # Generate output filename (use original filename directly)
+        # Note: secure_filename removes non-ASCII characters, breaking Korean filenames
+        # Since we're using Base64 JSON (not multipart), we can safely use original filename
+        output_filename = generate_output_filename(filename)
 
         # Return as Base64 JSON response
         translated_bytes = translated_content.encode('utf-8')
