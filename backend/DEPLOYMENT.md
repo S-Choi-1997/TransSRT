@@ -209,15 +209,11 @@ gcloud functions logs read translate-srt --region=us-central1 --gen2 --limit=100
 - `.env`의 `CORS_ORIGINS` 변경으로 CORS 제한 가능
 - `.env` 파일은 절대 Git에 커밋하지 마세요 (이미 .gitignore에 포함됨)
 
-## GitHub Actions 자동 배포
+## 참고사항
 
-`main` 브랜치에 푸시하면 자동으로 배포됩니다:
-
-1. `.github/workflows/deploy-backend.yml` 파일이 자동 배포 처리
-2. GitHub Secrets에 `GCP_SA_KEY` 설정 필요
-3. 수동 배포와 동일한 설정 사용
-
-자동 배포를 비활성화하려면 workflow 파일을 삭제하거나 이름을 변경하세요.
+- 현재 GitHub Actions 자동 배포는 비활성화되어 있습니다
+- 배포는 `.\deploy.ps1` 스크립트를 통해 수동으로 수행됩니다
+- 필요 시 `.github/workflows/*.yml.disabled` 파일명에서 `.disabled` 제거하여 자동 배포 활성화 가능
 
 ## 지원
 

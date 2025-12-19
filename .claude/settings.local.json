@@ -21,7 +21,8 @@
       "Bash(gcloud functions describe:*)",
       "Bash(head:*)",
       "Bash(gcloud secrets versions add:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(mv:*)"
     ]
   }
 }
