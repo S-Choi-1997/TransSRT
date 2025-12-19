@@ -14,6 +14,7 @@ import functions_framework
 from dotenv import load_dotenv
 
 from srt_parser import SRTParser, SRTEntry
+from sbv_parser import SBVParser, SBVEntry
 from chunker import create_chunks
 from translator import translate_subtitles, TranslationError
 
@@ -58,8 +59,9 @@ def validate_file(file) -> tuple[bool, str]:
     if file.filename == '':
         return False, "No file selected"
 
-    if not file.filename.lower().endswith('.srt'):
-        return False, "Invalid file format. Only .srt files are accepted"
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith('.srt') or filename_lower.endswith('.sbv')):
+        return False, "Invalid file format. Only .srt and .sbv files are accepted"
 
     # Check file size
     file.seek(0, 2)  # Seek to end
@@ -76,25 +78,53 @@ def validate_file(file) -> tuple[bool, str]:
 def generate_output_filename(input_filename: str) -> str:
     """
     Generate output filename with _en suffix.
+    Output is always SRT format regardless of input format.
 
     Args:
-        input_filename: Original filename (e.g., "movie.srt")
+        input_filename: Original filename (e.g., "movie.srt" or "captions.sbv")
 
     Returns:
         Output filename (e.g., "movie_en.srt")
     """
-    if input_filename.lower().endswith('.srt'):
+    filename_lower = input_filename.lower()
+    if filename_lower.endswith('.srt'):
         base = input_filename[:-4]
         return f"{base}_en.srt"
+    elif filename_lower.endswith('.sbv'):
+        base = input_filename[:-4]
+        return f"{base}_en.srt"  # Convert SBV to SRT format
     return f"{input_filename}_en.srt"
 
 
-def process_translation(content: str) -> tuple[str, int]:
+def detect_format(content: str) -> str:
     """
-    Process SRT content translation.
+    Detect subtitle format (SRT or SBV).
 
     Args:
-        content: Raw SRT file content
+        content: Raw subtitle file content
+
+    Returns:
+        'srt' or 'sbv'
+    """
+    srt_parser = SRTParser()
+    sbv_parser = SBVParser()
+
+    # Try SRT first (more common)
+    if srt_parser.validate(content):
+        return 'srt'
+    elif sbv_parser.validate(content):
+        return 'sbv'
+    else:
+        return 'unknown'
+
+
+def process_translation(content: str, filename: str = None) -> tuple[str, int]:
+    """
+    Process subtitle content translation (SRT or SBV format).
+
+    Args:
+        content: Raw subtitle file content
+        filename: Optional filename for format detection hint
 
     Returns:
         (translated_content, entry_count)
@@ -105,18 +135,46 @@ def process_translation(content: str) -> tuple[str, int]:
     import time
     overall_start = time.time()
 
-    # Parse SRT
-    parser = SRTParser()
+    # Detect format
+    file_format = detect_format(content)
+    logger.info(f"Detected format: {file_format}")
 
+    # Parse based on format
     try:
         parse_start = time.time()
-        entries = parser.parse(content)
-        parse_time = time.time() - parse_start
-        logger.info(f"[TIMING] Parsing: {parse_time:.3f}s ({len(entries)} entries)")
+
+        if file_format == 'sbv':
+            sbv_parser = SBVParser()
+            sbv_entries = sbv_parser.parse(content)
+
+            # Convert SBV to SRT entries
+            entries = []
+            for sbv_entry in sbv_entries:
+                srt_timestamp = sbv_parser.sbv_to_srt_timestamp(sbv_entry.timestamp)
+                # Extract entry number from position (1-indexed)
+                entry_num = len(entries) + 1
+                entries.append(SRTEntry(
+                    number=str(entry_num),
+                    timestamp=srt_timestamp,
+                    text=sbv_entry.text
+                ))
+
+            parse_time = time.time() - parse_start
+            logger.info(f"[TIMING] SBV Parsing & Conversion: {parse_time:.3f}s ({len(entries)} entries)")
+
+        elif file_format == 'srt':
+            srt_parser = SRTParser()
+            entries = srt_parser.parse(content)
+            parse_time = time.time() - parse_start
+            logger.info(f"[TIMING] SRT Parsing: {parse_time:.3f}s ({len(entries)} entries)")
+
+        else:
+            raise ValueError("Unable to detect subtitle format. File must be valid SRT or SBV format.")
+
     except ValueError as e:
         raise TranslationServiceError(
             message=str(e),
-            code="INVALID_SRT_FORMAT",
+            code="INVALID_SUBTITLE_FORMAT",
             status_code=400
         )
 
@@ -194,10 +252,11 @@ def process_translation(content: str) -> tuple[str, int]:
     reassemble_time = time.time() - reassemble_start
     logger.info(f"[TIMING] Reassembly: {reassemble_time:.3f}s ({len(translated_entries)} entries)")
 
-    # Format output
+    # Format output (always output as SRT format)
     try:
         format_start = time.time()
-        translated_content = parser.format_output(translated_entries)
+        srt_formatter = SRTParser()
+        translated_content = srt_formatter.format_output(translated_entries)
         format_time = time.time() - format_start
         logger.info(f"[TIMING] Formatting: {format_time:.3f}s")
     except Exception as e:
@@ -260,8 +319,8 @@ def translate():
         content = file.read().decode('utf-8')
         logger.info(f"Processing file: {original_filename}")
 
-        # Translate
-        translated_content, entry_count = process_translation(content)
+        # Translate (pass filename for format detection hint)
+        translated_content, entry_count = process_translation(content, original_filename)
 
         # Generate output filename
         output_filename = generate_output_filename(original_filename)
@@ -386,11 +445,12 @@ def translate_srt(request):
         base64_content = data['content']
 
         # Validate file extension
-        if not filename.endswith('.srt'):
+        filename_lower = filename.lower()
+        if not (filename_lower.endswith('.srt') or filename_lower.endswith('.sbv')):
             return jsonify({
                 'error': {
                     'code': 'INVALID_FILE',
-                    'message': 'File must be a .srt file'
+                    'message': 'File must be a .srt or .sbv file'
                 }
             }), 400
 
@@ -436,8 +496,8 @@ def translate_srt(request):
 
         logger.info(f"Processing file: {filename} ({file_size} bytes)")
 
-        # Translate
-        translated_content, entry_count = process_translation(file_content)
+        # Translate (pass filename for format detection hint)
+        translated_content, entry_count = process_translation(file_content, filename)
 
         # Generate output filename (use original filename directly)
         # Note: secure_filename removes non-ASCII characters, breaking Korean filenames

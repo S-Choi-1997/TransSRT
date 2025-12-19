@@ -20,7 +20,8 @@
       "Bash(timeout 30 bash:*)",
       "Bash(gcloud functions describe:*)",
       "Bash(head:*)",
-      "Bash(gcloud secrets versions add:*)"
+      "Bash(gcloud secrets versions add:*)",
+      "Bash(bash:*)"
     ]
   }
 }

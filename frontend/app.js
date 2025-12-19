@@ -9,7 +9,7 @@ const CONFIG = {
     API_ENDPOINT: 'https://translate-srt-mbi34yrklq-uc.a.run.app',
     // API_ENDPOINT: 'http://localhost:8080',  // Local development
     MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
-    ALLOWED_EXTENSIONS: ['.srt'],
+    ALLOWED_EXTENSIONS: ['.srt', '.sbv'],
     REQUEST_TIMEOUT: 5 * 60 * 1000  // 5 minutes
 };
 
@@ -129,7 +129,7 @@ function validateFile(file) {
     if (!hasValidExtension) {
         return {
             valid: false,
-            error: 'Invalid file format. Please upload an SRT file.'
+            error: 'Invalid file format. Please upload an SRT or SBV file.'
         };
     }
 
@@ -264,8 +264,16 @@ async function uploadAndTranslate(file) {
         const blob = new Blob([translatedBytes], { type: 'application/x-subrip' });
         console.log('[TransSRT] Blob created, size:', blob.size);
 
-        // Get filename from response
-        const filename = result.filename || file.name.replace('.srt', '_en.srt');
+        // Get filename from response (always SRT output)
+        let filename = result.filename;
+        if (!filename) {
+            // Generate filename based on input (always .srt output)
+            if (file.name.toLowerCase().endsWith('.sbv')) {
+                filename = file.name.replace(/\.sbv$/i, '_en.srt');
+            } else {
+                filename = file.name.replace(/\.srt$/i, '_en.srt');
+            }
+        }
         console.log('[TransSRT] Output filename:', filename);
 
         // Update progress

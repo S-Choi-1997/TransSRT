@@ -34,11 +34,11 @@ jobs:
             --entry-point translate_srt \
             --trigger-http \
             --allow-unauthenticated \
-            --memory 512Mi \
-            --timeout 300s \
+            --memory 512MB \
+            --timeout 540s \
             --max-instances 10 \
-            --set-env-vars GEMINI_MODEL=${{ secrets.GEMINI_MODEL }},CHUNK_SIZE=50,MAX_CONCURRENT_REQUESTS=10,MAX_FILE_SIZE_MB=10,CORS_ORIGINS=${{ secrets.CORS_ORIGINS }} \
-            --set-secrets GEMINI_API_KEY=gemini-api-key:latest
+            --set-env-vars GEMINI_MODEL=gemini-2.5-pro,CHUNK_SIZE=100,MAX_CONCURRENT_REQUESTS=5,MAX_FILE_SIZE_MB=10,CORS_ORIGINS=* \
+            --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest
 
       - name: Get Function URL
         id: get-url
