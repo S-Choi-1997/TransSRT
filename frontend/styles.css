@@ -34,11 +34,25 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background: linear-gradient(135deg, #1e5128 0%, #8b2e2e 100%);  /* Deep Green to Burgundy */
+    background: linear-gradient(-45deg, #1e5128, #2d6a3e, #16401f, #234d2f);
+    background-size: 400% 400%;
+    animation: deepGreenFlow 12s ease infinite;
     min-height: 100vh;
     color: var(--text-primary);
     line-height: 1.6;
     padding: 2rem 1rem;
+}
+
+@keyframes deepGreenFlow {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
 }
 
 .container {
@@ -65,12 +79,17 @@ header h1 {
     opacity: 0.95;
 }
 
-/* Section */
+/* Section - Glassmorphism */
 .section {
-    background: var(--surface-color);
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
     border-radius: var(--radius-lg);
     padding: 2.5rem;
-    box-shadow: var(--shadow-lg);
+    box-shadow:
+        0 8px 32px 0 rgba(30, 81, 40, 0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+    border: 1px solid rgba(255, 255, 255, 0.4);
     margin-bottom: 2rem;
     transition: var(--transition);
 }
