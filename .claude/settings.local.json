@@ -22,7 +22,8 @@
       "Bash(head:*)",
       "Bash(gcloud secrets versions add:*)",
       "Bash(bash:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(pwsh:*)"
     ]
   }
 }
